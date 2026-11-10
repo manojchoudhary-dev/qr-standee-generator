@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QR Standee Generator — printable QR cards for checkpoints</title>
+<style>
+  :root { --green:#14532D; --cream:#FAF6EF; --ink:#1c2420; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: Georgia, 'Times New Roman', serif; background: var(--cream); color: var(--ink); }
+  #app { max-width: 880px; margin: 0 auto; padding: 26px 16px 30px; }
+  h1 { color: var(--green); font-size: 28px; margin: 0 0 6px; text-align:center; }
+  .sub { text-align:center; font-size: 14.5px; line-height:1.5; margin: 0 auto 18px; max-width: 620px; }
+  .panel { background:#fff; border:1.5px solid #ddd5c2; border-radius:14px; padding:18px; }
+  label { display:block; font-size:13px; font-weight:bold; margin:12px 0 5px; }
+  label:first-child { margin-top:0; }
+  input { width:100%; font-family:inherit; font-size:15px; padding:10px 12px; border:1.5px solid #c9c2ae; border-radius:9px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  button { font-family:inherit; font-size:14.5px; padding:10px 18px; border-radius:999px; border:1.5px solid var(--green); background:#fff; color:var(--green); cursor:pointer; }
+  button.primary { background: var(--green); color:#fff; }
+  #warn { display:none; background:#fdecea; border:1.5px solid #e0a49e; color:#7a1f16; border-radius:9px; padding:10px 12px; font-size:13.5px; margin-bottom:14px; }
+  .previewWrap { text-align:center; margin-top:18px; }
+  .previewWrap h3 { margin:0 0 10px; font-size:15px; color:var(--green); }
+
+  .standee { width: 300px; margin: 0 auto; background:#fff; border:2px solid var(--green); border-radius:16px; overflow:hidden; text-align:center; }
+  .standee .band { background: var(--green); color:#fff; font-size:15px; letter-spacing:2px; padding:10px 8px; text-transform:uppercase; }
+  .standee .cp { font-size:24px; font-weight:bold; padding:14px 10px 2px; color: var(--ink); }
+  .standee .qrbox { padding: 8px 0 2px; }
+  .standee img.qrimg { width:200px; height:200px; image-rendering: pixelated; }
+  .standee .foot { font-size:14px; color:#43524a; padding: 6px 12px 16px; }
+
+  #sheetWrap { max-width: 880px; margin: 0 auto; padding: 0 16px 34px; }
+  #sheetWrap h2 { font-size:17px; color:var(--green); }
+  #sheet { display:flex; flex-wrap:wrap; gap:18px; }
+  #sheet .cell { position:relative; }
+  #sheet .rm { position:absolute; top:-9px; right:-9px; width:24px; height:24px; border-radius:50%; padding:0; line-height:1; background:#c62828; color:#fff; border:none; font-size:14px; }
+  .empty { font-size:14px; color:#5a665f; }
+
+  @media print {
+    #app, #sheetWrap h2, #sheet .rm { display:none !important; }
+    body { background:#fff; }
+    #sheetWrap { padding:0; }
+    #sheet { gap:10mm; }
+    .standee { width: 82mm; page-break-inside: avoid; }
+    .standee img.qrimg { width: 52mm; height: 52mm; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>QR Standee Generator</h1>
+  <p class="sub">Type a checkpoint name and its link, get a clean printable standee card with a QR code.
+     Add as many checkpoints as you need, then print the whole sheet. Built for venue onboarding —
+     gates, lobbies, lifts, help desks.</p>
+
+  <div id="warn">The QR library could not be loaded. Check your internet connection and reload the page — the generator needs it to draw QR codes.</div>
+
+  <div class="panel">
+    <label for="inBrand">Top band text (venue or brand)</label>
+    <input id="inBrand" type="text" value="SlopeMaps" maxlength="40">
+    <label for="inLabel">Checkpoint name</label>
+    <input id="inLabel" type="text" value="Main Gate" maxlength="48">
+    <label for="inUrl">Link the QR should open</label>
+    <input id="inUrl" type="url" value="https://slopemaps.in/c/db-city-mall">
+    <label for="inFoot">Bottom line on the card</label>
+    <input id="inFoot" type="text" value="Scan for step-by-step directions" maxlength="60">
+    <div class="row">
+      <button class="primary" id="btnAdd">Add card to sheet</button>
+      <button id="btnPrint">Print sheet</button>
+      <button id="btnClear">Clear sheet</button>
+    </div>
+  </div>
+
+  <div class="previewWrap">
+    <h3>Live preview</h3>
+    <div class="standee" id="preview">
+      <div class="band" id="pvBand">SlopeMaps</div>
+      <div class="cp" id="pvLabel">Main Gate</div>
+      <div class="qrbox"><img class="qrimg" id="pvQr" alt="QR code"></div>
+      <div class="foot" id="pvFoot">Scan for step-by-step directions</div>
+    </div>
+  </div>
+</div>
+
+<div id="sheetWrap">
+  <h2>Print sheet</h2>
+  <div id="sheet"><p class="empty" id="sheetEmpty">No cards yet. Fill the form and press “Add card to sheet”.</p></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+"use strict";
+(function () {
+  var brand = document.getElementById("inBrand");
+  var label = document.getElementById("inLabel");
+  var url = document.getElementById("inUrl");
+  var foot = document.getElementById("inFoot");
+  var sheet = document.getElementById("sheet");
+  var sheetEmpty = document.getElementById("sheetEmpty");
+
+  function libReady() { return typeof qrcode === "function"; }
+  if (!libReady()) document.getElementById("warn").style.display = "block";
+
+  function drawQR(img, text) {
+    if (!libReady()) return;
+    try {
+      var qr = qrcode(0, "M");
+      qr.addData(text || " ");
+      qr.make();
+      img.src = qr.createDataURL(8, 0);
+    } catch (err) { console.error(err); }
+  }
+
+  function refreshPreview() {
+    document.getElementById("pvBand").textContent = brand.value || " ";
+    document.getElementById("pvLabel").textContent = label.value || " ";
+    document.getElementById("pvFoot").textContent = foot.value || " ";
+    drawQR(document.getElementById("pvQr"), url.value);
+  }
+  [brand, label, url, foot].forEach(function (el) { el.addEventListener("input", refreshPreview); });
+  refreshPreview();
+
+  document.getElementById("btnAdd").addEventListener("click", function () {
+    if (!libReady()) { alert("QR library is not loaded yet. Check your connection and reload."); return; }
+    if (!url.value.trim()) { alert("Please enter the link the QR should open."); return; }
+    if (sheetEmpty) { sheetEmpty.remove(); sheetEmpty = null; }
+
+    var cell = document.createElement("div"); cell.className = "cell";
+    var card = document.createElement("div"); card.className = "standee";
+    var band = document.createElement("div"); band.className = "band"; band.textContent = brand.value || " ";
+    var cp = document.createElement("div"); cp.className = "cp"; cp.textContent = label.value || " ";
+    var qrbox = document.createElement("div"); qrbox.className = "qrbox";
+    var canvas = document.createElement("img"); canvas.className = "qrimg"; canvas.alt = "QR code";
+    var ft = document.createElement("div"); ft.className = "foot"; ft.textContent = foot.value || " ";
+    qrbox.appendChild(canvas);
+    card.appendChild(band); card.appendChild(cp); card.appendChild(qrbox); card.appendChild(ft);
+
+    var rm = document.createElement("button"); rm.className = "rm"; rm.textContent = "×"; rm.title = "Remove card";
+    rm.addEventListener("click", function () {
+      cell.remove();
+      if (!sheet.querySelector(".cell")) {
+        var p = document.createElement("p"); p.className = "empty"; p.id = "sheetEmpty";
+        p.textContent = "No cards yet. Fill the form and press “Add card to sheet”.";
+        sheet.appendChild(p); sheetEmpty = p;
+      }
+    });
+    cell.appendChild(card); cell.appendChild(rm);
+    sheet.appendChild(cell);
+    drawQR(canvas, url.value);
+  });
+
+  document.getElementById("btnPrint").addEventListener("click", function () { window.print(); });
+  document.getElementById("btnClear").addEventListener("click", function () {
+    sheet.innerHTML = "";
+    var p = document.createElement("p"); p.className = "empty"; p.id = "sheetEmpty";
+    p.textContent = "No cards yet. Fill the form and press “Add card to sheet”.";
+    sheet.appendChild(p); sheetEmpty = p;
+  });
+})();
+</script>
+</body>
+</html>
